@@ -1,10 +1,9 @@
 package main
 
+func main() {
+	//Scrape()
+	GetHtml()
 
-func main(){
-
-  GetHtml()
-
-  //SetupRouter()
+	//SetupRouter()
 
 }
