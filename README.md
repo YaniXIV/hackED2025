@@ -1,6 +1,7 @@
 Server for hackED2025
 
 How to run:
+
 cd into the server directory and then you can use the command {go build .}
 to compile into a binary executable file once that you can just click to run in the future.
 
