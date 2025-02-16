@@ -36,8 +36,8 @@ func SetupRouter() {
 func handleLink(c *gin.Context) {
 	var linkdata responseData
 
-	if binderr := c.ShouldBindJSON(&linkdata); binderr != nil {
-		c.AbortWithError(http.StatusBadRequest, binderr)
+	if bindErr := c.ShouldBindJSON(&linkdata); bindErr != nil {
+		c.AbortWithError(http.StatusBadRequest, bindErr)
 		return
 	}
 
@@ -46,9 +46,10 @@ func handleLink(c *gin.Context) {
 	links = append(links, linkdata)
 	mu.Unlock()
 
+	text := GetHtml(linkdata.Link)
 	c.JSON(http.StatusAccepted, gin.H{
 		"message": "Link added successfully!",
-		"data":    linkdata,
+		"data":    text,
 	})
 
 	checkData()

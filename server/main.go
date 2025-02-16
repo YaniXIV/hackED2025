@@ -2,8 +2,8 @@ package main
 
 func main() {
 	//Scrape()
-	GetHtml()
+	//GetHtml()
 
-	//SetupRouter()
+	SetupRouter()
 
 }
