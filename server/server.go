@@ -5,6 +5,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"sync"
+  "github.com/gin-contrib/cors"
 )
 
 type responseData struct {
@@ -18,6 +19,7 @@ var mu sync.Mutex
 func SetupRouter() {
 	//initializing the gin engine
 	r := gin.Default()
+  r.Use(cors.Default())
 	fmt.Println("Server starting~")
 	/*
 		  post request to handle links
@@ -30,7 +32,7 @@ func SetupRouter() {
 	r.POST("/api/link", handleLink)
 
 	//starts server
-	r.Run()
+  r.Run(":8080")
 }
 
 func handleLink(c *gin.Context) {
@@ -46,10 +48,11 @@ func handleLink(c *gin.Context) {
 	links = append(links, linkdata)
 	mu.Unlock()
 
-	text := GetHtml(linkdata.Link)
+	text, title := GetHtmlHybrid(linkdata.Link)
 	c.JSON(http.StatusAccepted, gin.H{
 		"message": "Link added successfully!",
 		"data":    text,
+    "title": title,
 	})
 
 	checkData()

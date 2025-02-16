@@ -1,6 +1,5 @@
-package main
-
-import (
+package main 
+import(
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
 	"log"
@@ -10,14 +9,27 @@ import (
 	"context"
 	"github.com/chromedp/chromedp"
 	"strings"
-	"time"
+  "time"
+
 )
 
 /* I think this is our best bet for the scraping.
 my current issue is the inline javascript that is embedded into the html. It may be best to just keep it
 and tell the llm to ignore any script.*/
 
-func GetHtml(l string) string {
+func GetHtmlHybrid(url string)(string, string){
+  bodyText, titleText :=  getHtmlFast(url)
+  bodyText = CleanGoQueryContent(bodyText)
+
+  if bodyText == "" || len(bodyText) < 100{
+    fmt.Println("Fallng back to ChromeDp for :", url)
+    return getHtmlFallback(url)
+  }
+
+  return bodyText, titleText
+}
+
+func getHtmlFast(l string) (string, string){
 	//var link string
 	fmt.Println("getting data.")
 
@@ -60,7 +72,7 @@ func GetHtml(l string) string {
 
 	if res.StatusCode != http.StatusOK {
 		log.Printf("HTTP Error: %d\n", res.StatusCode)
-		return fmt.Sprintf("Error: recieved status code %d", res.StatusCode)
+		return fmt.Sprintf("Error: recieved status code %d", res.StatusCode),""
 	}
 
 	//reading html data into go query
@@ -75,8 +87,10 @@ func GetHtml(l string) string {
 	doc.Find(".sidebar").Remove()
 	doc.Find(".footer").Remove()
 
+  title := doc.Find("title").Text()
+
 	//parsing the different possible html tags that might contain our data
-	selectors := []string{".article-body", ".post-content", ".entry-content", "main"}
+	selectors := []string{".article-body", ".post-content", "", "main"}
 	var text string
 	for _, sel := range selectors {
 		textSelection := doc.Find(sel)
@@ -92,11 +106,26 @@ func GetHtml(l string) string {
 	//fmt.Println("The file content: ", text)
 	if text == "" {
 		log.Printf("No readable content found for URL: %s", l)
-		return "Error: No readable context found"
+    return "Error: No readable context found", ""
 	}
+  bodyText := strings.TrimSpace(text)
+  titleText := strings.TrimSpace(title)
 
-	return strings.TrimSpace(text)
+	return bodyText, titleText
 
+}
+
+func CleanGoQueryContent(text string) string {
+    // Remove unwanted notification or pop-up data
+    if strings.Contains(text, "Click 'OK'") || strings.Contains(text, "Allow") {
+        return ""
+    }
+
+    // Remove any other known unwanted content
+    text = strings.Replace(text, "data", "", -1)
+
+    // Trim any leading/trailing spaces or newlines
+    return strings.TrimSpace(text)
 }
 
 // Add the http:// prefix to urls.
@@ -109,29 +138,36 @@ func fixUrl(url string) string {
 
 // Scrape Tried to run a headless Chrome browser.
 // Ignore this function
-func Scrape() {
-	// Create a Chrome instance
-	ctx, cancel := chromedp.NewContext(context.Background())
+func getHtmlFallback(url string)(string, string){
+  // Time out to prevent potential hanging
+  ctx, cancel := chromedp.NewContext(
+    context.Background(),
+    chromedp.WithLogf(log.Printf),
+    )
 	defer cancel()
 
-	// Set timeout to avoid hanging
-	ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
+  ctx, cancel = context.WithTimeout(ctx, 15*time.Second)
+  defer cancel()
 
-	var pageContent string
+  var bodyText string
+  var titleText string
 
-	// Navigate and extract text
 	err := chromedp.Run(ctx,
-		chromedp.Navigate("https://www.forbes.com/sites/paultassi/2025/02/13/the-gta-6-release-date-window-narrowed-by-the-borderlands-4-release-date/"), // Replace with target URL
-		chromedp.WaitVisible("body", chromedp.ByQuery),        // Wait for page to load
-		chromedp.Text("body", &pageContent, chromedp.ByQuery), // Extract body text
-	)
-	if err != nil {
-		fmt.Println("Error:", err)
-		return
-	}
+		chromedp.Navigate(url),
+		chromedp.WaitVisible("body", chromedp.ByQuery), // Ensures page loads
+		//chromedp.OuterHTML("html", &htmlContent),
 
-	// Clean and print text
-	cleanedText := strings.TrimSpace(pageContent)
-	fmt.Println(cleanedText)
+    chromedp.Text("title", &titleText),
+    chromedp.Text("body", &bodyText),
+	)
+	
+
+	if err != nil {
+		log.Printf("Chromedp error: %v", err)
+		return "Error fetching content", ""
+	}
+  body := strings.TrimSpace(bodyText)
+  title := strings.TrimSpace(titleText)
+
+	return body, title
 }
