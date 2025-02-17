@@ -48,11 +48,12 @@ func handleLink(c *gin.Context) {
 	links = append(links, linkdata)
 	mu.Unlock()
 
-	text, title := GetHtmlHybrid(linkdata.Link)
+	text, title, imageURL := GetHtmlHybrid(linkdata.Link)
 	c.JSON(http.StatusAccepted, gin.H{
 		"message": "Link added successfully!",
 		"data":    text,
     "title": title,
+    "imageURL": imageURL,
 	})
 
 	checkData()

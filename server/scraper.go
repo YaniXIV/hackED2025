@@ -10,6 +10,11 @@ import(
 	"github.com/chromedp/chromedp"
 	"strings"
   "time"
+  "net/url"
+  "encoding/json"
+
+  "bytes"
+  "io/ioutil"
 
 )
 
@@ -17,19 +22,61 @@ import(
 my current issue is the inline javascript that is embedded into the html. It may be best to just keep it
 and tell the llm to ignore any script.*/
 
-func GetHtmlHybrid(url string)(string, string){
-  bodyText, titleText :=  getHtmlFast(url)
+func GetHtmlHybrid(url string)(string, string, string){
+  bodyText, titleText, imageURL :=  getHtmlFast(url)
   bodyText = CleanGoQueryContent(bodyText)
 
   if bodyText == "" || len(bodyText) < 100{
     fmt.Println("Fallng back to ChromeDp for :", url)
     return getHtmlFallback(url)
   }
-
-  return bodyText, titleText
+  if bodyText == ""|| titleText == "" || imageURL == ""{
+    fmt.Println("One or more fields are empty, falling back to fastapi for: ", url)
+    return getHtmlPython(url)
+  } 
+  return bodyText, titleText,imageURL 
 }
 
-func getHtmlFast(l string) (string, string){
+func getHtmlPython(url string)(string,string,string){
+  apiURL := "http://localhost:8000/scrape-data/"
+
+  payload := map[string]string{"url": url}
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return "", "", "" 
+	}
+
+	// Send POST request to FastAPI
+	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", "", "" 
+	}
+	defer resp.Body.Close()
+
+	// Read the response body
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", "" 
+	}
+
+	// The response is just 3 strings, so you need to parse the body accordingly
+	// This expects the three values to be returned as a JSON array
+	var result []string
+	err = json.Unmarshal(body, &result)
+	if err != nil {
+		return "", "", "" 
+	}
+
+	// Ensure we have exactly 3 values in the response
+	if len(result) != 3 {
+		return "", "", "" 
+  }
+
+	// Return the 3 values
+	return result[0], result[1], result[2] 
+}
+
+func getHtmlFast(l string) (string, string, string){
 	//var link string
 	fmt.Println("getting data.")
 
@@ -72,7 +119,7 @@ func getHtmlFast(l string) (string, string){
 
 	if res.StatusCode != http.StatusOK {
 		log.Printf("HTTP Error: %d\n", res.StatusCode)
-		return fmt.Sprintf("Error: recieved status code %d", res.StatusCode),""
+		return fmt.Sprintf("Error: recieved status code %d", res.StatusCode),"", ""
 	}
 
 	//reading html data into go query
@@ -106,14 +153,43 @@ func getHtmlFast(l string) (string, string){
 	//fmt.Println("The file content: ", text)
 	if text == "" {
 		log.Printf("No readable content found for URL: %s", l)
-    return "Error: No readable context found", ""
+    return "Error: No readable context found", "", ""
 	}
   bodyText := strings.TrimSpace(text)
   titleText := strings.TrimSpace(title)
 
-	return bodyText, titleText
+  var imageURL string
+  doc.Find("meta[property='og:image'], meta[name='twitter:image']").Each(func(i int, s *goquery.Selection) {
+	if content, exists := s.Attr("content"); exists {
+	  imageURL = strings.TrimSpace(content)
+		}
+	}) 
+  if imageURL == ""{
+    faviconURL, exists := doc.Find("link[rel='icon'], link[rel='shortcut icon']").Attr("href")
+		if exists {
+			imageURL = fixUrlForRelativeLinks(l, strings.TrimSpace(faviconURL))
+		}
+  }
+
+	return bodyText, titleText, imageURL
 
 }
+
+func fixUrlForRelativeLinks(baseURL, imagePath string) string {
+	if strings.HasPrefix(imagePath, "http") {
+		return imagePath 
+	}
+
+	// Extract domain from baseURL
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		log.Println("Error parsing base URL:", err)
+		return imagePath
+	}
+
+	return u.Scheme + "://" + u.Host + imagePath
+}
+
 
 func CleanGoQueryContent(text string) string {
     // Remove unwanted notification or pop-up data
@@ -138,7 +214,7 @@ func fixUrl(url string) string {
 
 // Scrape Tried to run a headless Chrome browser.
 // Ignore this function
-func getHtmlFallback(url string)(string, string){
+func getHtmlFallback(url string)(string, string, string){
   // Time out to prevent potential hanging
   ctx, cancel := chromedp.NewContext(
     context.Background(),
@@ -164,10 +240,10 @@ func getHtmlFallback(url string)(string, string){
 
 	if err != nil {
 		log.Printf("Chromedp error: %v", err)
-		return "Error fetching content", ""
+		return "Error fetching content", "", ""
 	}
   body := strings.TrimSpace(bodyText)
   title := strings.TrimSpace(titleText)
 
-	return body, title
+	return body, title, ""
 }
