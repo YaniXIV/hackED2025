@@ -18,10 +18,24 @@ import(
 
 )
 
-/* I think this is our best bet for the scraping.
-my current issue is the inline javascript that is embedded into the html. It may be best to just keep it
-and tell the llm to ignore any script.*/
+/*
+GetHtmlHybrid manages the redundancy and degradation logic for scraping requests.
 
+This function first attempts to retrieve HTML data using GoQuery, which is the most 
+performant method. However, some websites employ strict anti-scraping measures, 
+making this approach insufficient. To address this, the function falls back to 
+using Chromedp, which spawns a headless Chrome instance to bypass bot prevention 
+techniques. While Chromedp is powerful for circumventing scraping barriers, it is 
+less efficient at extracting image URLs, as it is not optimized for this purpose.
+
+To ensure consistent data retrieval, if both GoQuery and Chromedp fail or are 
+inadequate, a final fallback option is employed: a Post request to a Python-based 
+API running BeautifulSoup. This ensures the scraping process continues reliably, 
+even in the face of challenges posed by strict anti-bot measures.
+
+The function aims to provide a robust, fault-tolerant scraping experience with multiple
+redundant strategies to handle various site restrictions.
+*/
 func GetHtmlHybrid(url string)(string, string, string){
   bodyText, titleText, imageURL :=  getHtmlFast(url)
   bodyText = CleanGoQueryContent(bodyText)
@@ -37,16 +51,20 @@ func GetHtmlHybrid(url string)(string, string, string){
   return bodyText, titleText,imageURL 
 }
 
+/*
+This function makes a post request to our fastapi server.
+*/
 func getHtmlPython(url string)(string,string,string){
   apiURL := "http://localhost:8000/scrape-data/"
 
+  //Marshaling our url data into json
   payload := map[string]string{"url": url}
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		return "", "", "" 
 	}
 
-	// Send POST request to FastAPI
+	// Send Post request to FastAPI
 	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", "", "" 
@@ -77,14 +95,7 @@ func getHtmlPython(url string)(string,string,string){
 }
 
 func getHtmlFast(l string) (string, string, string){
-	//var link string
 	fmt.Println("getting data.")
-
-	//These are some testing links I was using.
-	//link = "https://httpbin.org/#/HTTP_Methods/delete_delete"
-	//link = "https://www.ign.com/articles/where-to-buy-midnight-black-ps5-playstation-portal-pulse-elite-dualsense-edge"
-	//link = "https://scrapeops.io/web-scraping-playbook/403-forbidden-error-web-scraping/"
-	//link = "https://www.forbes.com/sites/paultassi/2025/02/13/the-gta-6-release-date-window-narrowed-by-the-borderlands-4-release-date/"
 
 	//enabling cookies
 	jar, _ := cookiejar.New(nil)
@@ -147,10 +158,7 @@ func getHtmlFast(l string) (string, string, string){
 		}
 	}
 
-	//strings.TrimSpace(text)
 
-	//fmt.Println("The file size is :", len(text))
-	//fmt.Println("The file content: ", text)
 	if text == "" {
 		log.Printf("No readable content found for URL: %s", l)
     return "Error: No readable context found", "", ""
@@ -212,8 +220,14 @@ func fixUrl(url string) string {
 	return url
 }
 
-// Scrape Tried to run a headless Chrome browser.
-// Ignore this function
+/*
+getHtmlFallback launches a headless Chrome browser instance using Chromedp to scrape HTML content 
+from a given URL, bypassing strict anti-bot measures implemented by some websites.
+
+This method serves as a fallback when traditional scraping techniques (e.g., GoQuery) fail due to 
+JavaScript-rendered content or bot detection mechanisms. By using a real browser instance, 
+this approach can successfully retrieve data that might otherwise be inaccessible.
+*/
 func getHtmlFallback(url string)(string, string, string){
   // Time out to prevent potential hanging
   ctx, cancel := chromedp.NewContext(
@@ -231,7 +245,6 @@ func getHtmlFallback(url string)(string, string, string){
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(url),
 		chromedp.WaitVisible("body", chromedp.ByQuery), // Ensures page loads
-		//chromedp.OuterHTML("html", &htmlContent),
 
     chromedp.Text("title", &titleText),
     chromedp.Text("body", &bodyText),
